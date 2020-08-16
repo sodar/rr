@@ -1570,6 +1570,9 @@ template <typename Arch> void prepare_ethtool_ioctl(RecordTask* t, TaskSyscallSt
     case ETHTOOL_SPAUSEPARAM:
     case ETHTOOL_SFEATURES:
       break;
+    // Expected EINVAL for 'ioctl' but got result 0 (errno SUCCESS); unknown ETHTOOL command 76
+    case 76:
+      break;
     default:
       LOG(debug) << "Unknown ETHTOOL cmd " << cmd;
       syscall_state.expect_errno = EINVAL;
@@ -1744,6 +1747,9 @@ static Switchable prepare_ioctl(RecordTask* t,
 
     case SG_GET_VERSION_NUM:
       syscall_state.reg_parameter<typename Arch::signed_int>(3);
+      return PREVENT_SWITCH;
+
+    case 0xc0181b01:
       return PREVENT_SWITCH;
 
     case SG_IO:
