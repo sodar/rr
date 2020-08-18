@@ -30,6 +30,7 @@
 #include <linux/videodev2.h>
 #include <linux/wireless.h>
 #include <poll.h>
+#include <rdma/rdma_user_ioctl_cmds.h>
 #include <sched.h>
 #include <scsi/sg.h>
 #include <sound/asound.h>
@@ -1749,7 +1750,11 @@ static Switchable prepare_ioctl(RecordTask* t,
       syscall_state.reg_parameter<typename Arch::signed_int>(3);
       return PREVENT_SWITCH;
 
-    case 0xc0181b01:
+    /* RDMA_VERBS_IOCTL ioctl request used in libibverbs.
+     * net_mlx5 PMD is linked against libibverbs and these ioctls
+     * are called during probing.
+     */
+    case RDMA_VERBS_IOCTL:
       return PREVENT_SWITCH;
 
     case SG_IO:
