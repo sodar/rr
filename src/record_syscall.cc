@@ -1755,6 +1755,8 @@ static Switchable prepare_ioctl(RecordTask* t,
      * are called during probing.
      */
     case RDMA_VERBS_IOCTL:
+      // TODO: ioctl argument size is dynamically calculated. How to do this in rr?
+      syscall_state.reg_parameter<typename Arch::ib_uverbs_ioctl_hdr>(3);
       return PREVENT_SWITCH;
 
     case SG_IO:
