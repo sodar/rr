@@ -1666,6 +1666,55 @@ struct BaseArch : public wordsize,
     ptr<link_map> r_map;
     // More fields we don't need (and are potentially libc specific)
   };
+
+  /* Based on:
+   * - https://github.com/linux-rdma/rdma-core/blob/e336086ec6649fbcace511b54419dcac0ae040b7/libibverbs/cmd_ioctl.h
+   * - https://github.com/torvalds/linux/blob/494c5580aa6721874a6d9d62dac1c94e83e79302/include/uapi/rdma/rdma_user_ioctl_cmds.h
+   *
+   * TODO: Is it possible to use `using` to expose kernel structs in this namespace?
+   */
+  struct ib_uverbs_attr {
+    uint16_t attr_id;  /* command specific type attribute */
+    uint16_t len;  /* only for pointers and IDRs array */
+    uint16_t flags;  /* combination of UVERBS_ATTR_F_XXXX */
+    union {
+      struct {
+        uint8_t elem_id;
+        uint8_t reserved;
+      } enum_data;
+      uint16_t reserved;
+    } attr_data;
+    union {
+      /*
+      * ptr to command, inline data, idr/fd or
+      * ptr to __u32 array of IDRs
+      */
+      uint64_t __attribute__((aligned(8))) data;
+      /* Used by FD_IN and FD_OUT */
+      int64_t data_s64;
+    };
+  };
+
+  /* Argument object passed to RDMA_VERBS_IOCTL ioctl request.
+   * NOTE: sizeof(T) will return an incorrect value because of VLA at the end
+   *       of the struct.
+   *
+   * Based on:
+   * - https://github.com/linux-rdma/rdma-core/blob/e336086ec6649fbcace511b54419dcac0ae040b7/libibverbs/cmd_ioctl.h
+   * - https://github.com/torvalds/linux/blob/494c5580aa6721874a6d9d62dac1c94e83e79302/include/uapi/rdma/rdma_user_ioctl_cmds.h
+   *
+   * TODO: Is it possible to use `using` to expose kernel structs in this namespace?
+   */
+  struct ib_uverbs_ioctl_hdr {
+    uint16_t length;
+    uint16_t object_id;
+    uint16_t method_id;
+    uint16_t num_attrs;
+    uint64_t __attribute__((aligned(8)))  reserved1;
+    uint32_t driver_id;
+    uint32_t reserved2;
+    struct ib_uverbs_attr attrs[0];
+  };
 };
 
 struct X64Arch : public BaseArch<SupportedArch::x86_64, WordSize64Defs> {
