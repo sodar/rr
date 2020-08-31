@@ -1572,7 +1572,7 @@ template <typename Arch> void prepare_ethtool_ioctl(RecordTask* t, TaskSyscallSt
     case ETHTOOL_SFEATURES:
       break;
     // Expected EINVAL for 'ioctl' but got result 0 (errno SUCCESS); unknown ETHTOOL command 76
-    case 76:
+    case ETHTOOL_GLINKSETTINGS:
       // TODO(sodar): Handle it somehow?
       break;
     // Expected EINVAL for 'ioctl' but got result 0 (errno SUCCESS); unknown ETHTOOL command 29
