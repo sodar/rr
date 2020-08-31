@@ -1573,6 +1573,11 @@ template <typename Arch> void prepare_ethtool_ioctl(RecordTask* t, TaskSyscallSt
       break;
     // Expected EINVAL for 'ioctl' but got result 0 (errno SUCCESS); unknown ETHTOOL command 76
     case 76:
+      // TODO(sodar): Handle it somehow?
+      break;
+    // Expected EINVAL for 'ioctl' but got result 0 (errno SUCCESS); unknown ETHTOOL command 29
+    case ETHTOOL_GSTATS:
+      // TODO(sodar): Handle it somehow?
       break;
     default:
       LOG(debug) << "Unknown ETHTOOL cmd " << cmd;
