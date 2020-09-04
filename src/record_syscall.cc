@@ -1588,6 +1588,26 @@ template <typename Arch> void prepare_ethtool_ioctl(RecordTask* t, TaskSyscallSt
 }
 
 template <typename Arch>
+static void prepare_rdma_verbs_ioctl(__attribute__((unused)) RecordTask* t,
+                                     __attribute__((unused)) TaskSyscallState& syscall_state)
+{
+  LOG(warn) << "called prepare_rdma_verbs_ioctl()";
+
+  auto hdrp = syscall_state.reg_parameter<typename Arch::ib_uverbs_ioctl_hdr>(3, IN);
+  bool ok = true;
+  auto hdr = t->read_mem(hdrp, &ok);
+  if (!ok) {
+    syscall_state.expect_errno = EFAULT;
+    return;
+  }
+
+  LOG(warn) << "  hdr->length = " << hdr.length;
+  LOG(warn) << "  hdr->object_id = " << hdr.object_id;
+  LOG(warn) << "  hdr->method_id = " << hdr.method_id;
+  LOG(warn) << "  hdr->num_attrs = " << hdr.num_attrs;
+}
+
+template <typename Arch>
 static Switchable prepare_ioctl(RecordTask* t,
                                 TaskSyscallState& syscall_state) {
   int fd = t->regs().arg1();
@@ -1761,7 +1781,7 @@ static Switchable prepare_ioctl(RecordTask* t,
      */
     case RDMA_VERBS_IOCTL:
       // TODO: ioctl argument size is dynamically calculated. How to do this in rr?
-      syscall_state.reg_parameter<typename Arch::ib_uverbs_ioctl_hdr>(3);
+      prepare_rdma_verbs_ioctl<Arch>(t, syscall_state);
       return PREVENT_SWITCH;
 
     case SG_IO:
