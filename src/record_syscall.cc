@@ -1618,11 +1618,6 @@ static void prepare_rdma_verbs_ioctl(__attribute__((unused)) RecordTask* t,
     syscall_state.expect_errno = EFAULT;
     return;
   }
-
-  LOG(warn) << "  hdr->length = " << hdr.length;
-  LOG(warn) << "  hdr->object_id = " << hdr.object_id;
-  LOG(warn) << "  hdr->method_id = " << hdr.method_id;
-  LOG(warn) << "  hdr->num_attrs = " << hdr.num_attrs;
 }
 
 template <typename Arch>
