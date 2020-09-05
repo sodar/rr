@@ -1587,6 +1587,8 @@ template <typename Arch> void prepare_ethtool_ioctl(RecordTask* t, TaskSyscallSt
   syscall_state.after_syscall_action(record_page_below_stack_ptr);
 }
 
+template<typename T> struct TD;
+
 template <typename Arch>
 static void prepare_rdma_verbs_ioctl(__attribute__((unused)) RecordTask* t,
                                      __attribute__((unused)) TaskSyscallState& syscall_state)
@@ -1617,6 +1619,40 @@ static void prepare_rdma_verbs_ioctl(__attribute__((unused)) RecordTask* t,
     // TODO(sodar): How to handle it correctly?
     syscall_state.expect_errno = EFAULT;
     return;
+  }
+
+  // TODO(sodar): Do using real structs...
+  // TD<decltype(hdrp)> td;
+  auto attrs_field_p = hdrp.template cast<uint8_t>() + sizeof(typename Arch::ib_uverbs_ioctl_hdr);
+  auto attrs_p = attrs_field_p.template cast<typename Arch::ib_uverbs_attr>();
+  for (unsigned int i = 0; i < hdr.num_attrs; ++i) {
+    auto attr_p = attrs_p + i;
+    auto attr = t->read_mem(attr_p, &ok);
+    ASSERT(t, ok) << "failed to read attrs[" << i << "]";
+
+    ssize_t data_len = attr.len;
+    uintptr_t data_addr = attr.data;
+    if (data_len > 8) {
+      // Heuristic - assume that any data longer than 8 bytes, is pointer pointing to a buffer and
+      // attr is PTR_OUT.
+      ASSERT(t, data_addr != 0) << "p is NULL, but data_len = " << data_len << "for arrts[" << i << "]";
+      // remote_ptr<void> data_p = data_addr;
+      auto data_p = REMOTE_PTR_FIELD(attr_p, data);
+      auto p = syscall_state.mem_ptr_parameter(data_p, data_len, IN_OUT);
+      ASSERT(t, !p.is_null()) << "p to arrts[" << i << "] is null";
+    } else if (data_len == 8) {
+      // Heuristic - if data can fit a pointer check if pointer is valid; if not, it is probably ENUM_IN.
+      // Otherwise PTR_IN and/or PTR_OUT.
+      // ASSERT(t, data_addr != 0) << "p is NULL, but data_len = " << data_len << "for arrts[" << i << "]";
+      // remote_ptr<void> data_p = data_addr;
+      auto data_p = REMOTE_PTR_FIELD(attr_p, data);
+      if (t->vm()->has_mapping(data_addr)) {
+        auto p = syscall_state.mem_ptr_parameter(data_p, data_len, IN_OUT);
+        ASSERT(t, !p.is_null()) << "p to arrts[" << i << "] is null";
+      }
+    } else {
+      // Already stored in VLA.
+    }
   }
 }
 
