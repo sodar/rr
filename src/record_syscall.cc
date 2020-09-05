@@ -1593,10 +1593,28 @@ static void prepare_rdma_verbs_ioctl(__attribute__((unused)) RecordTask* t,
 {
   LOG(warn) << "called prepare_rdma_verbs_ioctl()";
 
-  auto hdrp = syscall_state.reg_parameter<typename Arch::ib_uverbs_ioctl_hdr>(3, IN);
+  auto &regs = syscall_state.syscall_entry_registers;
+  remote_ptr<void> argp = regs.arg(3);
+  auto hdrp = argp.cast<typename Arch::ib_uverbs_ioctl_hdr>();
+  if (hdrp.is_null()) {
+    LOG(fatal) << "arg3 is NULL.";
+    // TODO(sodar): How to handle it correctly?
+    syscall_state.expect_errno = EFAULT;
+    return;
+  }
+
   bool ok = true;
   auto hdr = t->read_mem(hdrp, &ok);
   if (!ok) {
+    syscall_state.expect_errno = EFAULT;
+    return;
+  }
+
+  auto size = hdr.length;
+  auto hdrv = syscall_state.reg_parameter(3, size, IN_OUT);
+  if (hdrv.is_null()) {
+    LOG(fatal) << "hdrv is NULL.";
+    // TODO(sodar): How to handle it correctly?
     syscall_state.expect_errno = EFAULT;
     return;
   }
