@@ -1572,9 +1572,20 @@ template <typename Arch> void prepare_ethtool_ioctl(RecordTask* t, TaskSyscallSt
     case ETHTOOL_SFEATURES:
       break;
     // Expected EINVAL for 'ioctl' but got result 0 (errno SUCCESS); unknown ETHTOOL command 76
-    case ETHTOOL_GLINKSETTINGS:
-      // TODO(sodar): Handle it somehow?
+    case ETHTOOL_GLINKSETTINGS: {
+      auto buf = t->read_mem(buf_ptr.cast<ethtool_link_settings>(), &ok);
+      if (ok) {
+        auto nwords = (
+          buf.link_mode_masks_nwords > 0 ? buf.link_mode_masks_nwords : -buf.link_mode_masks_nwords
+        );
+        auto size = ParamSize(sizeof(buf) + sizeof(buf.link_mode_masks[0]) * nwords);
+        syscall_state.mem_ptr_parameter(payload, size, IN_OUT);
+      } else {
+        syscall_state.expect_errno = EFAULT;
+        return;
+      }
       break;
+    }
     // Expected EINVAL for 'ioctl' but got result 0 (errno SUCCESS); unknown ETHTOOL command 29
     case ETHTOOL_GSTATS:
       // TODO(sodar): Handle it somehow?
