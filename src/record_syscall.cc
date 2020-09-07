@@ -30,6 +30,7 @@
 #include <linux/videodev2.h>
 #include <linux/wireless.h>
 #include <poll.h>
+#include <rdma/ib_user_ioctl_cmds.h>
 #include <rdma/rdma_user_ioctl_cmds.h>
 #include <sched.h>
 #include <scsi/sg.h>
@@ -1604,8 +1605,6 @@ template <typename Arch>
 static void prepare_rdma_verbs_ioctl(__attribute__((unused)) RecordTask* t,
                                      __attribute__((unused)) TaskSyscallState& syscall_state)
 {
-  LOG(warn) << "called prepare_rdma_verbs_ioctl()";
-
   auto &regs = syscall_state.syscall_entry_registers;
   remote_ptr<void> argp = regs.arg(3);
   auto hdrp = argp.cast<typename Arch::ib_uverbs_ioctl_hdr>();
@@ -1622,6 +1621,12 @@ static void prepare_rdma_verbs_ioctl(__attribute__((unused)) RecordTask* t,
     syscall_state.expect_errno = EFAULT;
     return;
   }
+
+  LOG(debug)
+    << "hdr->length=" << hdr.length
+    << " hdr->object_id=" << hdr.object_id
+    << " hdr->method_id=" << hdr.method_id
+    << " hdr->num_attrs=" << hdr.num_attrs;
 
   auto size = hdr.length;
   auto hdrv = syscall_state.reg_parameter(3, size, IN_OUT);
@@ -1640,6 +1645,32 @@ static void prepare_rdma_verbs_ioctl(__attribute__((unused)) RecordTask* t,
     auto attr_p = attrs_p + i;
     auto attr = t->read_mem(attr_p, &ok);
     ASSERT(t, ok) << "failed to read attrs[" << i << "]";
+
+    if (hdr.object_id == UVERBS_OBJECT_DEVICE && hdr.method_id == UVERBS_METHOD_INVOKE_WRITE) {
+      switch (attr.attr_id) {
+      case UVERBS_ATTR_CORE_IN:
+      case UVERBS_ATTR_UHW_IN: {
+        if (attr.len > sizeof(uint64_t)) {
+          auto data_p = REMOTE_PTR_FIELD(attr_p, data);
+          syscall_state.mem_ptr_parameter(data_p, attr.len, IN_OUT);
+        }
+        break;
+      }
+      case UVERBS_ATTR_CORE_OUT:
+      case UVERBS_ATTR_UHW_OUT: {
+        auto data_p = REMOTE_PTR_FIELD(attr_p, data);
+        syscall_state.mem_ptr_parameter(data_p, attr.len, IN_OUT);
+        break;
+      }
+      case UVERBS_ATTR_WRITE_CMD: {
+        // Should be inside attr struct.
+        break;
+      }
+      default:
+        ASSERT(t, false) << "unknown attr_id for INVOKE_WRITE verb";
+      }
+      continue;
+    }
 
     ssize_t data_len = attr.len;
     uintptr_t data_addr = attr.data;
