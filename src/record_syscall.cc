@@ -5524,6 +5524,12 @@ static void process_mmap(RecordTask* t, size_t length, int prot, int flags,
     MonitoredSharedMemory::maybe_monitor(t, tracee_file_name,
                                          t->vm()->mapping_of(addr), fd, offset);
   }
+
+  if ((prot & (PROT_WRITE | PROT_READ)) == (PROT_WRITE | PROT_READ) && (flags & MAP_SHARED) &&
+      !effectively_anonymous) {
+    MonitoredSharedMemory::maybe_monitor(t, tracee_file_name,
+                                         t->vm()->mapping_of(addr), fd, offset);
+  }
 }
 
 static void process_mremap(RecordTask* t, remote_ptr<void> old_addr,

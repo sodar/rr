@@ -19,13 +19,39 @@ MonitoredSharedMemory::~MonitoredSharedMemory() { munmap(real_mem, size); }
 
 static const char dconf_suffix[] = "/dconf/user";
 
+// static const char dpdk_prefix[] = "/run/dpdk/rte";
+
+static const char rtemap_prefix[] = "/dev/hugepages/rtemap";
+
 void MonitoredSharedMemory::maybe_monitor(RecordTask* t,
                                           const string& file_name,
                                           const AddressSpace::Mapping& m,
-                                          int tracee_fd, uint64_t offset) {
+                                          int tracee_fd, uint64_t offset)
+{
+  bool is_dconf = true;
+  // bool is_dpdk = true;
+  bool is_rtemap = true;
+
   size_t dconf_suffix_len = sizeof(dconf_suffix) - 1;
   if (file_name.size() < dconf_suffix_len ||
       file_name.substr(file_name.size() - dconf_suffix_len) != dconf_suffix) {
+    is_dconf = false;
+  }
+
+  // size_t dpdk_prefix_len = sizeof(dpdk_prefix) - 1;
+  // if (file_name.size() < dpdk_prefix_len ||
+  //     file_name.substr(0, dpdk_prefix_len) != dpdk_prefix) {
+  //   is_dpdk = false;
+  // }
+
+  size_t rtemap_prefix_len = sizeof(rtemap_prefix) - 1;
+  if (file_name.size() < rtemap_prefix_len ||
+      file_name.substr(0, rtemap_prefix_len) != rtemap_prefix) {
+    is_rtemap = false;
+  }
+
+  // if (!is_dconf && !is_dpdk && !is_rtemap) {
+  if (!is_dconf && !is_rtemap) {
     return;
   }
 
@@ -33,7 +59,7 @@ void MonitoredSharedMemory::maybe_monitor(RecordTask* t,
 
   ScopedFd fd = remote.retrieve_fd(tracee_fd);
   uint8_t* real_mem = static_cast<uint8_t*>(
-      mmap(NULL, m.map.size(), PROT_READ, MAP_SHARED, fd, offset));
+      mmap(NULL, m.map.size(), PROT_READ | PROT_WRITE, MAP_SHARED, fd, offset));
   ASSERT(t, real_mem != MAP_FAILED);
 
   auto result = shared_ptr<MonitoredSharedMemory>(
@@ -74,10 +100,11 @@ void MonitoredSharedMemory::check_for_changes(RecordTask* t,
     m = Session::recreate_shared_mmap(remote, m, Session::DISCARD_CONTENTS,
                                       move(msm));
   }
-  if (!memcmp(m.local_addr, real_mem, size)) {
-    return;
-  }
-  memcpy(m.local_addr, real_mem, size);
+  // if (!memcmp(m.local_addr, real_mem, size)) {
+  //   return;
+  // }
+  // memcpy(m.local_addr, real_mem, size);
+  memcpy(real_mem, m.local_addr, size);
   t->record_local(m.map.start(), size, real_mem);
 }
 }

@@ -429,20 +429,36 @@ static void remap_shared_mmap(AutoRemoteSyscalls& remote, EmuFs& emu_fs,
 KernelMapping Session::create_shared_mmap(
     AutoRemoteSyscalls& remote, size_t size, remote_ptr<void> map_hint,
     const char* name, int tracee_prot, int tracee_flags,
-    MonitoredSharedMemory::shr_ptr&& monitored) {
+    MonitoredSharedMemory::shr_ptr&& monitored)
+{
+  bool is_huge_backed = false;
+
+  if (monitored) {
+    is_huge_backed = true;
+  }
+
   static int nonce = 0;
   // Create the segment we'll share with the tracee.
   char path[PATH_MAX];
-  snprintf(path, sizeof(path) - 1, "%s%s%s-%d-%d", tmp_dir(),
+  if (!is_huge_backed) {
+    snprintf(path, sizeof(path) - 1, "%s%s%s-%d-%d", tmp_dir(),
            rr_mapping_prefix(), name, remote.task()->real_tgid(), nonce++);
+  } else {
+    snprintf(path, sizeof(path) - 1, "%s%s%s-%d-%d", "/dev/hugepages",
+           rr_mapping_prefix(), name, remote.task()->real_tgid(), nonce++);
+  }
 
   ScopedFd shmem_fd(path, O_CREAT | O_EXCL | O_RDWR);
   /* Remove the fs name so that we don't have to worry about
    * cleaning up this segment in error conditions. */
-  unlink(path);
+  if (!is_huge_backed) {
+    unlink(path);
+  }
 
   int child_shmem_fd = remote.send_fd(shmem_fd);
-  resize_shmem_segment(shmem_fd, size);
+  if (!is_huge_backed) {
+    resize_shmem_segment(shmem_fd, size);
+  }
   LOG(debug) << "created shmem segment " << path;
 
   // Map the segment in ours and the tracee's address spaces.
