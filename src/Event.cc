@@ -36,6 +36,10 @@ Event::Event(const Event& o) : event_type(o.event_type) {
     case EV_SYSCALLBUF_FLUSH:
       new (&SyscallbufFlush()) SyscallbufFlushEvent(o.SyscallbufFlush());
       return;
+    case EV_SIGSEGV_PATCHING:
+      sigsegv.addr = o.sigsegv.addr;
+      sigsegv.len = o.sigsegv.len;
+      sigsegv.value = o.sigsegv.value;
     default:
       return;
   }
@@ -211,11 +215,23 @@ std::string Event::type_name() const {
       CASE(SYSCALL);
       CASE(SYSCALL_INTERRUPTION);
       CASE(TRACE_TERMINATION);
+      CASE(SIGSEGV_PATCHING);
 #undef CASE
     default:
       FATAL() << "Unknown event type " << event_type;
       return ""; // not reached
   }
+}
+
+Event Event::sigsegv_patching(uintptr_t addr, size_t len, uint64_t value)
+{
+  Event ev = Event(EV_SIGSEGV_PATCHING);
+
+  ev.sigsegv.addr = addr;
+  ev.sigsegv.len = len;
+  ev.sigsegv.value = value;
+
+  return ev;
 }
 
 const char* state_name(SyscallState state) {

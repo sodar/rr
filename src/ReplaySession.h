@@ -68,6 +68,9 @@ enum ReplayTraceStepType {
   /* Exit the task */
   TSTEP_EXIT_TASK,
 
+  // TODO(sodar)
+  TSTEP_SIGSEGV_PATCHING,
+
   /* Frame has been replayed, done. */
   TSTEP_RETIRE,
 };
@@ -353,6 +356,9 @@ private:
   void check_approaching_ticks_target(ReplayTask* t,
                                       const StepConstraints& constraints,
                                       BreakStatus& break_status);
+
+  void rep_process_sigsegv_patching(ReplayTask* t, ReplayTraceStep* step, const Event& ev);
+  Completion do_sigsegv_patching(ReplayTask *t, const StepConstraints& constraint);
 
   void clear_syscall_bp();
 

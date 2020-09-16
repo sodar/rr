@@ -499,6 +499,15 @@ void TraceWriter::write_frame(RecordTask* t, const Event& ev,
       }
       break;
     }
+    case EV_SIGSEGV_PATCHING: {
+      const auto& s = ev.Sigsegv();
+      auto sigsegv = event.initSigsegvPatching();
+      sigsegv.setAddr(s.addr);
+      sigsegv.setLen(s.len);
+      sigsegv.setValue(s.value);
+      // event.setSigsegvPatching(Void());
+      break;
+    }
     default:
       FATAL() << "Event type not recordable";
       break;
@@ -665,6 +674,11 @@ TraceFrame TraceReader::read_frame() {
           FATAL() << "Unknown syscall type";
           break;
       }
+      break;
+    }
+    case trace::Frame::Event::SIGSEGV_PATCHING: {
+      auto s = event.getSigsegvPatching();
+      ret.ev = Event::sigsegv_patching(s.getAddr(), s.getLen(), s.getValue());
       break;
     }
     default:
