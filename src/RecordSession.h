@@ -220,6 +220,7 @@ private:
   bool handle_ptrace_event(RecordTask** t_ptr, StepState* step_state,
                            RecordResult* result, bool* did_enter_syscall);
   bool handle_signal_event(RecordTask* t, StepState* step_state);
+  bool handle_sigsegv_patching_event(RecordTask* t, StepState* step_state);
   void runnable_state_changed(RecordTask* t, StepState* step_state,
                               RecordResult* step_result,
                               bool can_consume_wait_status);

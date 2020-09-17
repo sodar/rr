@@ -748,6 +748,9 @@ public:
 
   // When exiting a syscall, we should call MonkeyPatcher::try_patch_syscall again.
   bool retry_syscall_patching;
+
+  // TODO(sodar): Document.
+  bool sigsegv_patching;
 };
 
 } // namespace rr

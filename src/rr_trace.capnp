@@ -269,5 +269,10 @@ struct Frame {
     }
     patchAfterSyscall @26: Void;
     patchVsyscall @27: Void;
+    sigsegvPatching :group {
+      addr @28 :UInt64;
+      len @29 :Int64;
+      value @30 :UInt64;
+    }
   }
 }

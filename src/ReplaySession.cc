@@ -1353,6 +1353,9 @@ static bool has_deterministic_ticks(const Event& ev,
   if (ev.has_ticks_slop()) {
     return false;
   }
+  if (step.action == TSTEP_SIGSEGV_PATCHING) {
+    return false;
+  }
   // We won't necessarily reach the same ticks when replaying an
   // async signal, due to debugger interrupts and other
   // implementation details.  This is checked in |advance_to()|
@@ -1426,6 +1429,8 @@ Completion ReplaySession::try_one_trace_step(
       return patch_next_syscall(t, constraints, false);
     case TSTEP_EXIT_TASK:
       return exit_task(t);
+    case TSTEP_SIGSEGV_PATCHING:
+      return do_sigsegv_patching(t, constraints);
     default:
       FATAL() << "Unhandled step type " << current_step.action;
       return COMPLETE;
@@ -1501,6 +1506,72 @@ ReplayTask* ReplaySession::revive_task_for_exec() {
   task_map.insert(make_pair(t->rec_tid, t));
   // The real tid is not changing yet. It will, in process_execve.
   return t;
+}
+
+void ReplaySession::rep_process_sigsegv_patching(ReplayTask* t, ReplayTraceStep* step, const Event& ev)
+{
+  ((void)t);
+  ((void)step);
+
+  const auto& sigsegv = ev.Sigsegv();
+
+  uintptr_t addr = sigsegv.addr;
+  size_t len = sigsegv.len;
+
+  ((void)addr);
+  ((void)len);
+
+  {
+    AutoRemoteSyscalls remote(t, AutoRemoteSyscalls::DISABLE_MEMORY_PARAMS);
+    int syscallno = syscall_number_for_mprotect(t->arch());
+    remote.infallible_syscall(syscallno, addr, len, PROT_READ | PROT_WRITE);
+  }
+}
+
+
+// Completion ReplaySession::continue_or_step(ReplayTask* t,
+//                                            const StepConstraints& constraints,
+//                                            TicksRequest tick_request,
+//                                            ResumeRequest resume_how) {
+
+Completion ReplaySession::do_sigsegv_patching(ReplayTask *t, const StepConstraints& constraint)
+{
+  ((void)t);
+  ((void)constraint);
+
+  if (t->tick_count() < trace_frame.ticks()) {
+      // TicksRequest ticks_request = RESUME_UNLIMITED_TICKS;
+      // if (constraint.ticks_target <= trace_frame.ticks()) {
+      //   if (!compute_ticks_request(t, constraint, &ticks_request)) {
+      //     return INCOMPLETE;
+      //   }
+      // }
+
+      // if (constraint.is_singlestep()) {
+      //   t->resume_execution(RESUME_SINGLESTEP, RESUME_WAIT, ticks_request);
+      // } else {
+      //   t->resume_execution(RESUME_CONT, RESUME_WAIT, ticks_request);
+      // }
+
+      // return INCOMPLETE;
+
+      while (true) {
+        TicksRequest ticks_request = (TicksRequest)(trace_frame.ticks() - t->tick_count());
+        auto completion = continue_or_step(t, constraint, ticks_request);
+        if (completion == COMPLETE) {
+          break;
+        }
+      }
+  }
+
+  auto& ev = trace_frame.event();
+  ASSERT(t, ev.type() == EV_SIGSEGV_PATCHING);
+
+  auto ptr = remote_ptr<uint64_t>(ev.Sigsegv().addr);
+  uint64_t val = ev.Sigsegv().value;
+  t->write_mem(ptr, val);
+
+  return COMPLETE;
 }
 
 /**
@@ -1635,6 +1706,11 @@ ReplayTask* ReplaySession::setup_replay_one_trace_frame(ReplayTask* t) {
         }
       }
       break;
+    case EV_SIGSEGV_PATCHING: {
+      current_step.action = TSTEP_SIGSEGV_PATCHING;
+      rep_process_sigsegv_patching(t, &current_step, ev);
+      break;
+    }
     default:
       FATAL() << "Unexpected event " << ev;
   }
