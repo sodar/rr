@@ -136,6 +136,44 @@ static bool try_handle_trapped_instruction(RecordTask* t, siginfo_t* si) {
   return true;
 }
 
+static bool try_handle_prot_none(RecordTask* t, siginfo_t* si)
+{
+  ASSERT(t, si->si_signo == SIGSEGV);
+
+  // Use kernel_abi to avoid odd inconsistencies between distros
+  auto arch_si = reinterpret_cast<NativeArch::siginfo_t*>(si);
+  auto addr = arch_si->_sifields._sigfault.si_addr_.rptr();
+
+  auto addr_value = addr.as_int();
+  if (addr_value != 0x10000000ULL) {
+    return false;
+  }
+
+  auto& mapping = t->vm()->mapping_of(addr);
+  ((void)mapping);
+
+  {
+    AutoRemoteSyscalls remote(t, AutoRemoteSyscalls::DISABLE_MEMORY_PARAMS);
+    int syscallno = syscall_number_for_mprotect(t->arch());
+    remote.infallible_syscall(syscallno, mapping.map.start(), mapping.map.size(),
+                              PROT_READ | PROT_WRITE);
+  }
+
+  bool ok = true;
+  auto p = addr.cast<uint64_t>();
+  auto val = t->read_mem(p, &ok);
+  ASSERT(t, ok) << "failed to read mem on sigsegv patching";
+
+  t->record_event(Event::sigsegv_patching(mapping.map.start().as_int(), mapping.map.size(), val),
+                  RecordTask::FLUSH_SYSCALLBUF);
+
+  t->push_event(Event::sigsegv_patching(mapping.map.start().as_int(), mapping.map.size(), val));
+  t->push_event(Event::noop());
+  t->sigsegv_patching = true;
+
+  return true;
+}
+
 /**
  * Return true if |t| was stopped because of a SIGSEGV and we want to retry
  * the instruction after emulating MAP_GROWSDOWN.
@@ -148,8 +186,14 @@ static bool try_grow_map(RecordTask* t, siginfo_t* si) {
   auto addr = arch_si->_sifields._sigfault.si_addr_.rptr();
 
   if (t->vm()->has_mapping(addr)) {
-    LOG(debug) << "try_grow_map " << addr << ": address already mapped";
-    return false;
+    if (try_handle_prot_none(t, si)) {
+      LOG(debug) << "try_handle_prot_none " << addr << ": done";
+      // TODO(sodar): Return some value.
+      return true;
+    } else {
+      LOG(debug) << "try_grow_map " << addr << ": address already mapped";
+      return false;
+    }
   }
   auto maps = t->vm()->maps_starting_at(floor_page_size(addr));
   auto it = maps.begin();

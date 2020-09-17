@@ -85,6 +85,8 @@ enum EventType {
   // Use .syscall.
   EV_SYSCALL,
 
+  EV_SIGSEGV_PATCHING,
+
   EV_LAST
 };
 
@@ -257,6 +259,13 @@ struct syscall_interruption_t {
 };
 static const syscall_interruption_t interrupted;
 
+// TODO(sodar)
+struct SigsegvPatchingEvent {
+  uintptr_t addr;
+  size_t len;
+  uint64_t value;
+};
+
 /**
  * Sum type for all events (well, a C++ approximation thereof).  An
  * Event always has a definted EventType.  It can be down-casted to
@@ -320,6 +329,16 @@ struct Event {
     return syscall;
   }
 
+  SigsegvPatchingEvent& Sigsegv() {
+    DEBUG_ASSERT(event_type == EV_SIGSEGV_PATCHING);
+    return sigsegv;
+  }
+
+  const SigsegvPatchingEvent& Sigsegv() const {
+    DEBUG_ASSERT(event_type == EV_SIGSEGV_PATCHING);
+    return sigsegv;
+  }
+
   bool record_regs() const;
 
   bool record_extra_regs() const;
@@ -372,6 +391,7 @@ struct Event {
   static Event grow_map() { return Event(EV_GROW_MAP); }
   static Event exit() { return Event(EV_EXIT); }
   static Event sentinel() { return Event(EV_SENTINEL); }
+  static Event sigsegv_patching(uintptr_t addr, size_t len, uint64_t value);
 
 private:
   Event(EventType type) : event_type(type) {}
@@ -383,6 +403,7 @@ private:
     SignalEvent signal;
     SyscallEvent syscall;
     SyscallbufFlushEvent syscallbuf_flush;
+    SigsegvPatchingEvent sigsegv;
   };
 };
 
