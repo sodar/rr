@@ -85,6 +85,9 @@ enum EventType {
   // Use .syscall.
   EV_SYSCALL,
 
+  /**
+   * TODO(sodar): Document
+   */
   EV_SIGSEGV_PATCHING,
 
   EV_LAST
@@ -259,8 +262,42 @@ struct syscall_interruption_t {
 };
 static const syscall_interruption_t interrupted;
 
-// TODO(sodar)
-struct SigsegvPatchingEvent {
+/**
+ * TODO(sodar): Document
+ */
+enum SigsegvPatchingState {
+  /**
+   * Dummy value.
+   */
+  SIGSEGV_PATCHING_DUMMY,
+
+  /**
+   * rr caught SIGSEGV on "monitored" memory region. rr should
+   * change memory region's protection and record memory.
+   */
+  SIGSEGV_PATCHING_ENTERING,
+
+  /**
+   * faulting instruction was single stepped. rr should rever memory region's
+   * protection and resume to the next event.
+   */
+  SIGSEGV_PATCHING_EXITING,
+};
+
+/**
+ * TODO(sodar): Document
+ */
+class SigsegvPatchingEvent {
+public:
+  SigsegvPatchingEvent()
+      : state(SIGSEGV_PATCHING_DUMMY),
+        addr(0),
+        len(0),
+        value(0) {}
+
+public:
+  SigsegvPatchingState state;
+
   uintptr_t addr;
   size_t len;
   uint64_t value;
@@ -391,7 +428,7 @@ struct Event {
   static Event grow_map() { return Event(EV_GROW_MAP); }
   static Event exit() { return Event(EV_EXIT); }
   static Event sentinel() { return Event(EV_SENTINEL); }
-  static Event sigsegv_patching(uintptr_t addr, size_t len, uint64_t value);
+  static Event sigsegv_patching(SigsegvPatchingState state, uintptr_t addr, size_t len, uint64_t value);
 
 private:
   Event(EventType type) : event_type(type) {}

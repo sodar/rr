@@ -18,31 +18,53 @@ namespace rr {
 MonitoredSharedMemory::~MonitoredSharedMemory() { munmap(real_mem, size); }
 
 static const char dconf_suffix[] = "/dconf/user";
+static const char rtemap_prefix[] = "/dev/hugepages";
 
 void MonitoredSharedMemory::maybe_monitor(RecordTask* t,
                                           const string& file_name,
-                                          const AddressSpace::Mapping& m,
-                                          int tracee_fd, uint64_t offset) {
+                                          AddressSpace::Mapping& m,
+                                          int tracee_fd, uint64_t offset)
+{
+  bool is_dconf = true;
+  bool is_rtemap = true;
+
   size_t dconf_suffix_len = sizeof(dconf_suffix) - 1;
   if (file_name.size() < dconf_suffix_len ||
       file_name.substr(file_name.size() - dconf_suffix_len) != dconf_suffix) {
-    return;
+    is_dconf = false;
   }
 
-  AutoRemoteSyscalls remote(t);
+  size_t rtemap_prefix_len = sizeof(rtemap_prefix) - 1;
+  if (file_name.size() < rtemap_prefix_len ||
+      file_name.substr(0, rtemap_prefix_len) != rtemap_prefix) {
+    is_rtemap = false;
+  }
 
-  ScopedFd fd = remote.retrieve_fd(tracee_fd);
-  uint8_t* real_mem = static_cast<uint8_t*>(
-      mmap(NULL, m.map.size(), PROT_READ, MAP_SHARED, fd, offset));
-  ASSERT(t, real_mem != MAP_FAILED);
+  if (!is_dconf && !is_rtemap) {
+    return;
+  };
 
-  auto result = shared_ptr<MonitoredSharedMemory>(
-      new MonitoredSharedMemory(real_mem, m.map.size()));
+  AutoRemoteSyscalls remote(t, AutoRemoteSyscalls::DISABLE_MEMORY_PARAMS);
+  int syscallno = syscall_number_for_mprotect(t->arch());
+  remote.infallible_syscall(syscallno, m.map.start(), m.map.size(),
+                            PROT_NONE);
 
-  const AddressSpace::Mapping& shared =
-      Session::steal_mapping(remote, m, move(result));
+  ((void)tracee_fd);
+  ((void)offset);
+
+  // ScopedFd fd = remote.retrieve_fd(tracee_fd);
+  // uint8_t* real_mem = static_cast<uint8_t*>(
+  //     mmap(NULL, m.map.size(), PROT_READ | PROT_WRITE, MAP_SHARED, fd, offset));
+  // ASSERT(t, real_mem != MAP_FAILED);
+
+  // auto result = shared_ptr<MonitoredSharedMemory>(
+  //     new MonitoredSharedMemory(real_mem, m.map.size()));
+
+  // const AddressSpace::Mapping& shared =
+  //     Session::steal_mapping(remote, m, move(result));
   // m may be invalid now
-  memcpy(shared.local_addr, real_mem, shared.map.size());
+  // memcpy(shared.local_addr, real_mem, shared.map.size());
+  // ((void)shared);
 }
 
 MonitoredSharedMemory::shr_ptr MonitoredSharedMemory::subrange(uintptr_t,
@@ -74,10 +96,10 @@ void MonitoredSharedMemory::check_for_changes(RecordTask* t,
     m = Session::recreate_shared_mmap(remote, m, Session::DISCARD_CONTENTS,
                                       move(msm));
   }
-  if (!memcmp(m.local_addr, real_mem, size)) {
-    return;
-  }
-  memcpy(m.local_addr, real_mem, size);
-  t->record_local(m.map.start(), size, real_mem);
+  // if (!memcmp(m.local_addr, real_mem, size)) {
+  //   return;
+  // }
+  // memcpy(m.local_addr, real_mem, size);
+  // t->record_local(m.map.start(), size, real_mem);
 }
 }

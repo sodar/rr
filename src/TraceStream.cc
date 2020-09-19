@@ -323,6 +323,30 @@ static SyscallState from_trace_syscall_state(trace::SyscallState state) {
   }
 }
 
+static trace::SigsegvPatchingState to_trace_sigsegv_state(SigsegvPatchingState state) {
+  switch (state) {
+    case SIGSEGV_PATCHING_ENTERING:
+      return trace::SigsegvPatchingState::ENTERING;
+    case SIGSEGV_PATCHING_EXITING:
+      return trace::SigsegvPatchingState::EXITING;
+    default:
+      FATAL() << "Unknown sigsegv patching state";
+      return trace::SigsegvPatchingState::ENTERING;
+  }
+}
+
+static SigsegvPatchingState from_trace_sigsegv_state(trace::SigsegvPatchingState state) {
+  switch (state) {
+    case trace::SigsegvPatchingState::ENTERING:
+      return SIGSEGV_PATCHING_ENTERING;
+    case trace::SigsegvPatchingState::EXITING:
+      return SIGSEGV_PATCHING_EXITING;
+    default:
+      FATAL() << "Unknown sigsegv patching state";
+      return SIGSEGV_PATCHING_ENTERING;
+  }
+}
+
 static void to_trace_signal(trace::Signal::Builder signal, const Event& ev) {
   const SignalEvent& sig_ev = ev.Signal();
   signal.setSiginfoArch(to_trace_arch(NativeArch::arch()));
@@ -502,10 +526,10 @@ void TraceWriter::write_frame(RecordTask* t, const Event& ev,
     case EV_SIGSEGV_PATCHING: {
       const auto& s = ev.Sigsegv();
       auto sigsegv = event.initSigsegvPatching();
+      sigsegv.setState(to_trace_sigsegv_state(s.state));
       sigsegv.setAddr(s.addr);
       sigsegv.setLen(s.len);
       sigsegv.setValue(s.value);
-      // event.setSigsegvPatching(Void());
       break;
     }
     default:
@@ -678,7 +702,8 @@ TraceFrame TraceReader::read_frame() {
     }
     case trace::Frame::Event::SIGSEGV_PATCHING: {
       auto s = event.getSigsegvPatching();
-      ret.ev = Event::sigsegv_patching(s.getAddr(), s.getLen(), s.getValue());
+      auto state = from_trace_sigsegv_state(s.getState());
+      ret.ev = Event::sigsegv_patching(state, s.getAddr(), s.getLen(), s.getValue());
       break;
     }
     default:

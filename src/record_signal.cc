@@ -144,13 +144,15 @@ static bool try_handle_prot_none(RecordTask* t, siginfo_t* si)
   auto arch_si = reinterpret_cast<NativeArch::siginfo_t*>(si);
   auto addr = arch_si->_sifields._sigfault.si_addr_.rptr();
 
-  auto addr_value = addr.as_int();
-  if (addr_value != 0x10000000ULL) {
-    return false;
-  }
+  // auto addr_value = addr.as_int();
+  // if (addr_value != 0x10000000ULL) {
+  //   return false;
+  // }
 
   auto& mapping = t->vm()->mapping_of(addr);
-  ((void)mapping);
+  if (!mapping.monitored_shared_memory) {
+    return false;
+  }
 
   {
     AutoRemoteSyscalls remote(t, AutoRemoteSyscalls::DISABLE_MEMORY_PARAMS);
@@ -164,10 +166,12 @@ static bool try_handle_prot_none(RecordTask* t, siginfo_t* si)
   auto val = t->read_mem(p, &ok);
   ASSERT(t, ok) << "failed to read mem on sigsegv patching";
 
-  t->record_event(Event::sigsegv_patching(mapping.map.start().as_int(), mapping.map.size(), val),
+  t->record_event(Event::sigsegv_patching(SIGSEGV_PATCHING_ENTERING, mapping.map.start().as_int(),
+                                          mapping.map.size(), val),
                   RecordTask::FLUSH_SYSCALLBUF);
 
-  t->push_event(Event::sigsegv_patching(mapping.map.start().as_int(), mapping.map.size(), val));
+  t->push_event(Event::sigsegv_patching(SIGSEGV_PATCHING_ENTERING, mapping.map.start().as_int(),
+                                        mapping.map.size(), val));
   t->push_event(Event::noop());
   t->sigsegv_patching = true;
 

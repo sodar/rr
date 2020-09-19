@@ -1787,13 +1787,17 @@ bool RecordSession::handle_sigsegv_patching_event(RecordTask* t, StepState* step
     auto sp = t->ev().Sigsegv();
 
     {
+      auto& mapping = t->vm()->mapping_of(sp.addr);
+
       AutoRemoteSyscalls remote(t, AutoRemoteSyscalls::DISABLE_MEMORY_PARAMS);
       int syscallno = syscall_number_for_mprotect(t->arch());
-      remote.infallible_syscall(syscallno, sp.addr, sp.len,
+      remote.infallible_syscall(syscallno, mapping.map.start(), mapping.map.size(),
                                 PROT_NONE);
     }
 
     t->sigsegv_patching = false;
+    t->record_event(Event::sigsegv_patching(SIGSEGV_PATCHING_EXITING, 0, 0, 0),
+                  RecordTask::FLUSH_SYSCALLBUF);
     t->pop_event(t->ev().type());
     // TODO(sodar): real event here.
     t->push_event(Event::noop());

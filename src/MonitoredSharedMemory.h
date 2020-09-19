@@ -35,7 +35,7 @@ public:
   typedef std::shared_ptr<MonitoredSharedMemory> shr_ptr;
 
   static void maybe_monitor(RecordTask* t, const std::string& file_name,
-                            const AddressSpace::Mapping& m, int tracee_fd,
+                            AddressSpace::Mapping& m, int tracee_fd,
                             uint64_t offset);
 
   static void check_all(RecordTask* t);

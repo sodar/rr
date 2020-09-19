@@ -36,10 +36,14 @@ Event::Event(const Event& o) : event_type(o.event_type) {
     case EV_SYSCALLBUF_FLUSH:
       new (&SyscallbufFlush()) SyscallbufFlushEvent(o.SyscallbufFlush());
       return;
-    case EV_SIGSEGV_PATCHING:
+    case EV_SIGSEGV_PATCHING: {
+      sigsegv.state = o.sigsegv.state;
+
       sigsegv.addr = o.sigsegv.addr;
       sigsegv.len = o.sigsegv.len;
       sigsegv.value = o.sigsegv.value;
+      return;
+    }
     default:
       return;
   }
@@ -89,6 +93,8 @@ bool Event::record_regs() const {
     case EV_SIGNAL_DELIVERY:
     case EV_SIGNAL_HANDLER:
       return true;
+    case EV_SIGSEGV_PATCHING:
+      return true;
     default:
       return false;
   }
@@ -106,6 +112,8 @@ bool Event::record_extra_regs() const {
     case EV_SIGNAL_HANDLER:
       // entering a signal handler seems to clear FP/SSE regs,
       // so record these effects.
+      return true;
+    case EV_SIGSEGV_PATCHING:
       return true;
     default:
       return false;
@@ -164,6 +172,23 @@ string Event::str() const {
     case EV_SYSCALL_INTERRUPTION:
       ss << ": " << syscall_name(Syscall().number, Syscall().regs.arch());
       break;
+    case EV_SIGSEGV_PATCHING: {
+      ss << ": ";
+      switch (sigsegv.state) {
+        case SIGSEGV_PATCHING_DUMMY:
+          ss << "state=DUMMY ";
+          break;
+        case SIGSEGV_PATCHING_ENTERING:
+          ss << "state=ENTERING ";
+          break;
+        case SIGSEGV_PATCHING_EXITING:
+          ss << "state=EXITING ";
+          break;
+        default:
+          break;
+      }
+      break;
+    }
     default:
       // No auxiliary information.
       break;
@@ -223,9 +248,11 @@ std::string Event::type_name() const {
   }
 }
 
-Event Event::sigsegv_patching(uintptr_t addr, size_t len, uint64_t value)
+Event Event::sigsegv_patching(SigsegvPatchingState state, uintptr_t addr, size_t len, uint64_t value)
 {
   Event ev = Event(EV_SIGSEGV_PATCHING);
+
+  ev.sigsegv.state = state;
 
   ev.sigsegv.addr = addr;
   ev.sigsegv.len = len;

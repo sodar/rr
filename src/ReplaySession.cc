@@ -1353,9 +1353,10 @@ static bool has_deterministic_ticks(const Event& ev,
   if (ev.has_ticks_slop()) {
     return false;
   }
-  if (step.action == TSTEP_SIGSEGV_PATCHING) {
-    return false;
-  }
+  // TODO(sodar)
+  // if (step.action == TSTEP_SIGSEGV_PATCHING) {
+  //   return false;
+  // }
   // We won't necessarily reach the same ticks when replaying an
   // async signal, due to debugger interrupts and other
   // implementation details.  This is checked in |advance_to()|
@@ -1429,8 +1430,10 @@ Completion ReplaySession::try_one_trace_step(
       return patch_next_syscall(t, constraints, false);
     case TSTEP_EXIT_TASK:
       return exit_task(t);
-    case TSTEP_SIGSEGV_PATCHING:
-      return do_sigsegv_patching(t, constraints);
+    case TSTEP_SIGSEGV_PATCHING_ENTERING:
+      return do_sigsegv_patching_entering(t, constraints);
+    case TSTEP_SIGSEGV_PATCHING_EXITING:
+      return do_sigsegv_patching_exiting(t, constraints);
     default:
       FATAL() << "Unhandled step type " << current_step.action;
       return COMPLETE;
@@ -1512,29 +1515,22 @@ void ReplaySession::rep_process_sigsegv_patching(ReplayTask* t, ReplayTraceStep*
 {
   ((void)t);
   ((void)step);
-
-  const auto& sigsegv = ev.Sigsegv();
-
-  uintptr_t addr = sigsegv.addr;
-  size_t len = sigsegv.len;
-
-  ((void)addr);
-  ((void)len);
-
-  {
-    AutoRemoteSyscalls remote(t, AutoRemoteSyscalls::DISABLE_MEMORY_PARAMS);
-    int syscallno = syscall_number_for_mprotect(t->arch());
-    remote.infallible_syscall(syscallno, addr, len, PROT_READ | PROT_WRITE);
-  }
+  ((void)ev);
 }
 
+void ReplaySession::rep_process_sigsegv_patching_exiting(ReplayTask* t, ReplayTraceStep* step, const Event& ev)
+{
+  ((void)t);
+  ((void)step);
+  ((void)ev);
+}
 
 // Completion ReplaySession::continue_or_step(ReplayTask* t,
 //                                            const StepConstraints& constraints,
 //                                            TicksRequest tick_request,
 //                                            ResumeRequest resume_how) {
 
-Completion ReplaySession::do_sigsegv_patching(ReplayTask *t, const StepConstraints& constraint)
+Completion ReplaySession::do_sigsegv_patching_entering(ReplayTask *t, const StepConstraints& constraint)
 {
   ((void)t);
   ((void)constraint);
@@ -1562,14 +1558,82 @@ Completion ReplaySession::do_sigsegv_patching(ReplayTask *t, const StepConstrain
           break;
         }
       }
+
+      t->resume_execution(RESUME_SINGLESTEP, RESUME_WAIT, RESUME_NO_TICKS);
+      handle_unrecorded_cpuid_fault(t, constraint);
+  }
+
+  // SINGLESTEP - should trigger SIGSEGV
+  {
+    t->resume_execution(RESUME_SINGLESTEP, RESUME_WAIT, RESUME_NO_TICKS);
+    handle_unrecorded_cpuid_fault(t, constraint);
+
+    ASSERT(t, t->stop_sig() == SIGSEGV)
+      << "do_sigsegv_patching_entering expected SIGSEGV, got" << t->stop_sig();
   }
 
   auto& ev = trace_frame.event();
   ASSERT(t, ev.type() == EV_SIGSEGV_PATCHING);
 
-  auto ptr = remote_ptr<uint64_t>(ev.Sigsegv().addr);
-  uint64_t val = ev.Sigsegv().value;
-  t->write_mem(ptr, val);
+  {
+    const auto& sigsegv = ev.Sigsegv();
+    ASSERT(t, sigsegv.state == SIGSEGV_PATCHING_ENTERING);
+    uintptr_t addr = sigsegv.addr;
+    size_t len = sigsegv.len;
+
+    {
+      AutoRemoteSyscalls remote(t, AutoRemoteSyscalls::DISABLE_MEMORY_PARAMS);
+      int syscallno = syscall_number_for_mprotect(t->arch());
+      remote.infallible_syscall(syscallno, addr, len, PROT_READ | PROT_WRITE);
+    }
+
+    auto ptr = remote_ptr<uint64_t>(sigsegv.addr);
+    uint64_t val = sigsegv.value;
+    t->write_mem(ptr, val);
+
+    // t->invalidate_sigmask();
+  }
+
+  // TODO(sodar) - document
+  // SINGLESTEP - should read proper value
+  {
+    // t->set_status(WaitStatus::for_stop_sig(SIGTRAP));
+    // t->resume_execution(RESUME_SINGLESTEP, RESUME_WAIT, RESUME_NO_TICKS);
+    // handle_unrecorded_cpuid_fault(t, constraint);
+
+    // ASSERT(t, t->stop_sig() == SIGSEGV)
+      // << "do_sigsegv_patching_entering expected SIGSEGV, got" << t->stop_sig();
+  }
+
+  t->set_status(constraint.is_singlestep() ? WaitStatus::for_stop_sig(SIGTRAP)
+                                           : WaitStatus());
+
+  return COMPLETE;
+}
+
+Completion ReplaySession::do_sigsegv_patching_exiting(ReplayTask *t, const StepConstraints& constraint)
+{
+  // ((void)t);
+  ((void)constraint);
+
+  auto& ev = trace_frame.event();
+  ASSERT(t, ev.type() == EV_SIGSEGV_PATCHING);
+
+  {
+    const auto& sigsegv = ev.Sigsegv();
+    ASSERT(t, sigsegv.state == SIGSEGV_PATCHING_EXITING);
+    uintptr_t addr = sigsegv.addr;
+    size_t len = sigsegv.len;
+
+    {
+      AutoRemoteSyscalls remote(t, AutoRemoteSyscalls::DISABLE_MEMORY_PARAMS);
+      int syscallno = syscall_number_for_mprotect(t->arch());
+      remote.infallible_syscall(syscallno, addr, len, PROT_NONE);
+    }
+  }
+
+  t->set_regs(trace_frame.regs());
+  t->set_extra_regs(trace_frame.extra_regs());
 
   return COMPLETE;
 }
@@ -1707,8 +1771,15 @@ ReplayTask* ReplaySession::setup_replay_one_trace_frame(ReplayTask* t) {
       }
       break;
     case EV_SIGSEGV_PATCHING: {
-      current_step.action = TSTEP_SIGSEGV_PATCHING;
-      rep_process_sigsegv_patching(t, &current_step, ev);
+      if (trace_frame.event().Sigsegv().state == SIGSEGV_PATCHING_ENTERING) {
+        current_step.action = TSTEP_SIGSEGV_PATCHING_ENTERING;
+        rep_process_sigsegv_patching(t, &current_step, ev);
+      } else if (trace_frame.event().Sigsegv().state == SIGSEGV_PATCHING_EXITING) {
+        current_step.action = TSTEP_SIGSEGV_PATCHING_EXITING;
+        rep_process_sigsegv_patching_exiting(t, &current_step, ev);
+      } else {
+        ASSERT(t, false) << "Unexpected SIGSEGV_PATHCHING event";
+      }
       break;
     }
     default:
