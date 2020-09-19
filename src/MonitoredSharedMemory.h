@@ -51,6 +51,8 @@ private:
   size_t size;
 };
 
+bool is_file_hugepage_backed(const std::string& file_name);
+
 } // namespace rr
 
 #endif /* RR_MONITORED_SHARED_MEMORY_H_ */

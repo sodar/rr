@@ -80,4 +80,23 @@ void MonitoredSharedMemory::check_for_changes(RecordTask* t,
   memcpy(m.local_addr, real_mem, size);
   t->record_local(m.map.start(), size, real_mem);
 }
+
+bool
+is_file_hugepage_backed(const std::string& file_name)
+{
+  static const char hugepage_prefix[] = "/dev/hugepages/";
+
+  size_t hugepage_prefix_len = sizeof(hugepage_prefix) - 1;
+
+  if (file_name.size() < hugepage_prefix_len) {
+    return false;
+  }
+
+  if (file_name.substr(0, hugepage_prefix_len) != hugepage_prefix) {
+    return false;
+  }
+
+  return true;
 }
+
+} // namespace rr

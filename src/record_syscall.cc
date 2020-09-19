@@ -5509,6 +5509,10 @@ static void process_mmap(RecordTask* t, size_t length, int prot, int flags,
         "written by programs outside the rr tracee "
         "tree.";
     }
+
+    if (is_file_hugepage_backed(tracee_file_name)) {
+      LOG(debug) << tracee_file_name << " is hugepage backed.";
+    }
   }
 
   // We don't want to patch MAP_SHARED files. In the best case we'd end crashing
