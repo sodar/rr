@@ -168,7 +168,16 @@ static bool try_handle_prot_none(RecordTask* t, siginfo_t* si)
       << m.map.start() << "-" << m.map.end() << ", size=" << m.map.size();
   }
 
-  auto ev = Event::sigsegv_patching(SIGSEGV_PATCHING_ENTERING, addr.as_int());
+  auto r = MemoryRange(addr, sizeof(uint64_t));
+  ASSERT(t, m.map.contains(r)) << "SIGSEGV_PATCHING cannot record values on page boundaries";
+  auto valp = addr.cast<uint64_t>();
+  uint64_t val = 0;
+  {
+    bool ok = true;
+    val = t->read_mem(valp, &ok);
+    ASSERT(t, ok) << "SIGSEGV_PATCHING, memory read has failed";
+  }
+  auto ev = Event::sigsegv_patching(SIGSEGV_PATCHING_ENTERING, addr.as_int(), val);
 
   t->record_event(ev, RecordTask::FLUSH_SYSCALLBUF);
 

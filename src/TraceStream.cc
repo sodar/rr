@@ -46,7 +46,7 @@ namespace rr {
 // MUST increment this version number.  Otherwise users' old traces
 // will become unreplayable and they won't know why.
 //
-#define TRACE_VERSION 86
+#define TRACE_VERSION 87
 
 struct SubstreamData {
   const char* name;
@@ -531,6 +531,7 @@ void TraceWriter::write_frame(RecordTask* t, const Event& ev,
       auto sigsegv = event.initSigsegvPatching();
       sigsegv.setState(to_trace_sigsegv_patching_state(e.state));
       sigsegv.setAddr(e.addr);
+      sigsegv.setValue(e.value);
       break;
     }
     default:
@@ -705,7 +706,8 @@ TraceFrame TraceReader::read_frame() {
       auto sigsegv = event.getSigsegvPatching();
       auto state = from_trace_sigsegv_patching_state(sigsegv.getState());
       uintptr_t addr = sigsegv.getAddr();
-      ret.ev = Event::sigsegv_patching(state, addr);
+      uint64_t value = sigsegv.getValue();
+      ret.ev = Event::sigsegv_patching(state, addr, value);
       break;
     }
     default:

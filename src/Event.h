@@ -282,6 +282,7 @@ enum SigsegvPatchingEventState {
 struct SigsegvPatchingEvent {
   SigsegvPatchingEventState state;
   uintptr_t addr;
+  uint64_t value;
 };
 
 /**
@@ -411,11 +412,12 @@ struct Event {
   static Event sentinel() { return Event(EV_SENTINEL); }
 
   /** TODO(sodar): Document */
-  static Event sigsegv_patching(SigsegvPatchingEventState state, uintptr_t addr) {
+  static Event sigsegv_patching(SigsegvPatchingEventState state, uintptr_t addr, uint64_t value) {
     auto ev = Event(EV_SIGSEGV_PATCHING);
     ev.sigsegv = {
       .state = state,
       .addr = addr,
+      .value = value,
     };
     return ev;
   }

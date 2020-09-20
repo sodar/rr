@@ -1433,7 +1433,15 @@ Completion ReplaySession::sigsegv_patching_enter(ReplayTask* t,
 {
   if (t->regs().matches(trace_frame.regs()) && t->tick_count() == trace_frame.ticks()) {
     ASSERT(t, trace_frame.event().Sigsegv().state == SIGSEGV_PATCHING_ENTERING);
-    // TODO(sodar): Revert memory from trace.
+
+    const SigsegvPatchingEvent& sigsegv = trace_frame.event().Sigsegv();
+    auto value_p = remote_ptr<uint64_t>(sigsegv.addr);
+    uint64_t value = sigsegv.value;
+
+    bool ok = true;
+    t->write_mem(value_p, value, &ok);
+    ASSERT(t, ok) << "SIGSEGV_PATCHING_ENTERING failed to overwrite memory";
+ 
     return COMPLETE;
   }
 

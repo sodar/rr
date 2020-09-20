@@ -277,6 +277,7 @@ struct Frame {
     sigsegvPatching :group {
       state @28 :SigsegvPatchingState;
       addr @29 :UInt64;
+      value @30 :UInt64;
     }
   }
 }
