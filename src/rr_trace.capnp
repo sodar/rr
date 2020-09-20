@@ -217,6 +217,11 @@ struct OpenedFd {
   inode @3 :Inode;
 }
 
+enum SigsegvPatchingState {
+  entering @0;
+  exiting @1;
+}
+
 # The 'events' file is a sequence of these.
 struct Frame {
   tid @0 :Tid;
@@ -269,5 +274,9 @@ struct Frame {
     }
     patchAfterSyscall @26: Void;
     patchVsyscall @27: Void;
+    sigsegvPatching :group {
+      state @28 :SigsegvPatchingState;
+      addr @29 :UInt64;
+    }
   }
 }

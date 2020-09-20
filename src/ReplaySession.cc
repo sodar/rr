@@ -9,6 +9,7 @@
 #include <syscall.h>
 
 #include <algorithm>
+#include <iomanip>
 
 #include "AutoRemoteSyscalls.h"
 #include "Flags.h"
@@ -1385,6 +1386,82 @@ Completion ReplaySession::advance_to_ticks_target(
   }
 }
 
+Completion ReplaySession::cont_sigsegv_patching_boundary(
+    ReplayTask* t,
+    const StepConstraints& constraints)
+{
+  // from `ReplaySession::cont_syscall_boundary`, ReplaySession.cc
+  TicksRequest ticks_request = RESUME_UNLIMITED_TICKS;
+  if (constraints.ticks_target <= trace_frame.ticks()) {
+    if (!compute_ticks_request(t, constraints, &ticks_request)) {
+      return INCOMPLETE;
+    }
+  }
+
+  // TODO(sodar): Insert breakpoint on rip from SIGSEGV_PATCHING_ENTERING to optimize.
+  // ResumeRequest resume_how = constraints.is_singlestep() ? RESUME_SINGLESTEP : RESUME_CONT;
+  ResumeRequest resume_how = RESUME_SINGLESTEP;
+  t->resume_execution(resume_how, RESUME_WAIT, ticks_request);
+
+  // from `ReplaySession::cont_syscall_boundary`, ReplaySession.cc
+  switch (t->stop_sig()) {
+    case 0:
+      break;
+    case PerfCounters::TIME_SLICE_SIGNAL:
+      // This would normally be triggered by constraints.ticks_target but it's
+      // also possible to get stray signals here.
+      return INCOMPLETE;
+    case SIGSEGV:
+      if (handle_unrecorded_cpuid_fault(t, constraints)) {
+        return INCOMPLETE;
+      }
+      break;
+    case SIGTRAP:
+      return INCOMPLETE;
+    default:
+      break;
+  }
+  if (t->stop_sig()) {
+    ASSERT(t, false) << "Replay got unrecorded signal " << t->get_siginfo();
+  }
+
+  return COMPLETE;
+}
+
+Completion ReplaySession::sigsegv_patching_enter(ReplayTask* t,
+                                                 const StepConstraints& constraints)
+{
+  if (t->regs().matches(trace_frame.regs()) && t->tick_count() == trace_frame.ticks()) {
+    ASSERT(t, trace_frame.event().Sigsegv().state == SIGSEGV_PATCHING_ENTERING);
+    // TODO(sodar): Revert memory from trace.
+    return COMPLETE;
+  }
+
+  auto cont = cont_sigsegv_patching_boundary(t, constraints);
+  ASSERT(t, cont == INCOMPLETE)
+    << "Something went wrong on cont_sigsegv_patching_boundary()";
+
+  return INCOMPLETE;
+}
+
+Completion ReplaySession::sigsegv_patching_exit(ReplayTask* t)
+{
+    // from `ReplaySession::cont_syscall_boundary`, ReplaySession.cc
+  TicksRequest ticks_request = RESUME_UNLIMITED_TICKS;
+  WaitRequest wait_how = RESUME_WAIT;
+  ResumeRequest resume_how = RESUME_SINGLESTEP;
+  t->resume_execution(resume_how, wait_how, ticks_request);
+  ASSERT(t, t->stop_sig() == SIGTRAP);
+
+  if (t->regs().matches(trace_frame.regs()) && t->tick_count() == trace_frame.ticks()) {
+    return COMPLETE;
+  }
+
+  ASSERT(t, false) << "Did not encounter SIGSEGV_PATCHING_EXITING rip instruction";
+
+  return INCOMPLETE;
+}
+
 /**
  * Try to execute |step|, adjusting for |req| if needed.  Return COMPLETE if
  * |step| was made, or INCOMPLETE if there was a trap or |step| needs
@@ -1426,6 +1503,10 @@ Completion ReplaySession::try_one_trace_step(
       return patch_next_syscall(t, constraints, false);
     case TSTEP_EXIT_TASK:
       return exit_task(t);
+    case TSTEP_SIGSEGV_PATCHING_ENTERING:
+      return sigsegv_patching_enter(t, constraints);
+    case TSTEP_SIGSEGV_PATCHING_EXITING:
+      return sigsegv_patching_exit(t);
     default:
       FATAL() << "Unhandled step type " << current_step.action;
       return COMPLETE;
@@ -1501,6 +1582,30 @@ ReplayTask* ReplaySession::revive_task_for_exec() {
   task_map.insert(make_pair(t->rec_tid, t));
   // The real tid is not changing yet. It will, in process_execve.
   return t;
+}
+
+static void rep_prepare_run_to_sigsegv(ReplayTask *t, ReplayTraceStep *step)
+{
+  const SigsegvPatchingEvent& sigsegv = t->current_trace_frame().event().Sigsegv();
+
+  LOG(debug) << __func__ << "(): "
+    << "processing SIGSEGV_PATCHING_ENTERING for addr "
+    << std::internal << std::hex << std::setw(16) << std::setfill('0')
+    << (void *)sigsegv.addr;
+
+  step->action = TSTEP_SIGSEGV_PATCHING_ENTERING;
+}
+
+static void rep_prepare_sigsegv_exit(ReplayTask *t, ReplayTraceStep *step)
+{
+  const SigsegvPatchingEvent& sigsegv = t->current_trace_frame().event().Sigsegv();
+
+  LOG(debug) << __func__ << "(): "
+    << "processing SIGSEGV_PATCHING_EXITING for addr "
+    << std::internal << std::hex << std::setw(16) << std::setfill('0')
+    << (void *)sigsegv.addr;
+
+  step->action = TSTEP_SIGSEGV_PATCHING_EXITING;
 }
 
 /**
@@ -1635,6 +1740,17 @@ ReplayTask* ReplaySession::setup_replay_one_trace_frame(ReplayTask* t) {
         }
       }
       break;
+    case EV_SIGSEGV_PATCHING: {
+      auto state = trace_frame.event().Sigsegv().state;
+      ASSERT(t, state == SIGSEGV_PATCHING_ENTERING || state == SIGSEGV_PATCHING_EXITING)
+        << "Unexpected SIGSEGV_PATCHING event";
+      if (state == SIGSEGV_PATCHING_ENTERING) {
+        rep_prepare_run_to_sigsegv(t, &current_step);
+      } else {
+        rep_prepare_sigsegv_exit(t, &current_step);
+      }
+      break;
+    }
     default:
       FATAL() << "Unexpected event " << ev;
   }
@@ -1749,6 +1865,10 @@ ReplayResult ReplaySession::replay_step(const StepConstraints& constraints) {
         result.break_status.singlestep_complete = true;
       }
       break;
+    case TSTEP_SIGSEGV_PATCHING_ENTERING:
+      // TODO(sodar): Nothing to do?
+    case TSTEP_SIGSEGV_PATCHING_EXITING:
+      // TODO(sodar): Nothing to do?
     default:
       break;
   }

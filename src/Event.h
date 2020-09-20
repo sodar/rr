@@ -265,7 +265,22 @@ static const syscall_interruption_t interrupted;
 /**
  * TODO(sodar): Document
  */
+enum SigsegvPatchingEventState {
+  /** Dummy */
+  SIGSEGV_PATCHING_DUMMY,
+
+  /** Tracee received a SIGSEGV signal, rr changes protection to RW, stores value and single steps */
+  SIGSEGV_PATCHING_ENTERING,
+
+  /** Tracee executed a faulting instruction, rr changes protection to NONE, continues */
+  SIGSEGV_PATCHING_EXITING,
+};
+
+/**
+ * TODO(sodar): Document
+ */
 struct SigsegvPatchingEvent {
+  SigsegvPatchingEventState state;
   uintptr_t addr;
 };
 
@@ -396,9 +411,10 @@ struct Event {
   static Event sentinel() { return Event(EV_SENTINEL); }
 
   /** TODO(sodar): Document */
-  static Event sigsegv_patching(uintptr_t addr) {
+  static Event sigsegv_patching(SigsegvPatchingEventState state, uintptr_t addr) {
     auto ev = Event(EV_SIGSEGV_PATCHING);
     ev.sigsegv = {
+      .state = state,
       .addr = addr,
     };
     return ev;
@@ -423,6 +439,8 @@ inline static std::ostream& operator<<(std::ostream& o, const Event& ev) {
 }
 
 const char* state_name(SyscallState state);
+
+const char* sigsegv_patching_state_name(SigsegvPatchingEventState state);
 
 } // namespace rr
 

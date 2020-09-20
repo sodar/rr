@@ -1805,6 +1805,9 @@ bool RecordSession::handle_sigsegv_patching_event(RecordTask* t, StepState* step
         << m.map.start() << "-" << m.map.end() << ", size=" << m.map.size();
     }
 
+    auto ev = Event::sigsegv_patching(SIGSEGV_PATCHING_EXITING, sp.addr);
+    t->record_event(ev, RecordTask::FLUSH_SYSCALLBUF);
+
     t->push_event(Event::noop());
 
     return true;

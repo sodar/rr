@@ -46,7 +46,7 @@ namespace rr {
 // MUST increment this version number.  Otherwise users' old traces
 // will become unreplayable and they won't know why.
 //
-#define TRACE_VERSION 85
+#define TRACE_VERSION 86
 
 struct SubstreamData {
   const char* name;
@@ -323,6 +323,33 @@ static SyscallState from_trace_syscall_state(trace::SyscallState state) {
   }
 }
 
+static trace::SigsegvPatchingState to_trace_sigsegv_patching_state(SigsegvPatchingEventState state) {
+  switch (state) {
+    case SIGSEGV_PATCHING_ENTERING:
+      return trace::SigsegvPatchingState::ENTERING;
+    case SIGSEGV_PATCHING_EXITING:
+      return trace::SigsegvPatchingState::EXITING;
+    case SIGSEGV_PATCHING_DUMMY:
+      FATAL() << "Cannot serialize SIGSEGV_PATCHING_DUMMY event";
+      return trace::SigsegvPatchingState::ENTERING;
+    default:
+      FATAL() << "Unknown sigsegv patching state";
+      return trace::SigsegvPatchingState::ENTERING;
+  }
+}
+
+static SigsegvPatchingEventState from_trace_sigsegv_patching_state(trace::SigsegvPatchingState state) {
+  switch (state) {
+    case trace::SigsegvPatchingState::ENTERING:
+      return SIGSEGV_PATCHING_ENTERING;
+    case trace::SigsegvPatchingState::EXITING:
+      return SIGSEGV_PATCHING_EXITING;
+    default:
+      FATAL() << "Unknown sigsegv patching state";
+      return SIGSEGV_PATCHING_ENTERING;
+  }
+}
+
 static void to_trace_signal(trace::Signal::Builder signal, const Event& ev) {
   const SignalEvent& sig_ev = ev.Signal();
   signal.setSiginfoArch(to_trace_arch(NativeArch::arch()));
@@ -499,6 +526,13 @@ void TraceWriter::write_frame(RecordTask* t, const Event& ev,
       }
       break;
     }
+    case EV_SIGSEGV_PATCHING: {
+      const SigsegvPatchingEvent& e = ev.Sigsegv();
+      auto sigsegv = event.initSigsegvPatching();
+      sigsegv.setState(to_trace_sigsegv_patching_state(e.state));
+      sigsegv.setAddr(e.addr);
+      break;
+    }
     default:
       FATAL() << "Event type not recordable";
       break;
@@ -665,6 +699,13 @@ TraceFrame TraceReader::read_frame() {
           FATAL() << "Unknown syscall type";
           break;
       }
+      break;
+    }
+    case trace::Frame::Event::SIGSEGV_PATCHING: {
+      auto sigsegv = event.getSigsegvPatching();
+      auto state = from_trace_sigsegv_patching_state(sigsegv.getState());
+      uintptr_t addr = sigsegv.getAddr();
+      ret.ev = Event::sigsegv_patching(state, addr);
       break;
     }
     default:

@@ -4,6 +4,7 @@
 
 #include <syscall.h>
 
+#include <iomanip>
 #include <sstream>
 #include <string>
 
@@ -174,6 +175,10 @@ string Event::str() const {
     case EV_SYSCALL_INTERRUPTION:
       ss << ": " << syscall_name(Syscall().number, Syscall().regs.arch());
       break;
+    case EV_SIGSEGV_PATCHING:
+      ss << ": "
+         << std::internal << std::hex << std::setw(16) << std::setfill('0')
+         << (void *)Sigsegv().addr;
     default:
       // No auxiliary information.
       break;
@@ -243,6 +248,20 @@ const char* state_name(SyscallState state) {
     CASE(ENTERING_SYSCALL);
     CASE(PROCESSING_SYSCALL);
     CASE(EXITING_SYSCALL);
+#undef CASE
+    default:
+      return "???state";
+  }
+}
+
+const char* sigsegv_patching_state_name(SigsegvPatchingEventState state) {
+  switch (state) {
+#define CASE(_id)                                                              \
+  case _id:                                                                    \
+    return #_id
+    CASE(SIGSEGV_PATCHING_DUMMY);
+    CASE(SIGSEGV_PATCHING_ENTERING);
+    CASE(SIGSEGV_PATCHING_EXITING);
 #undef CASE
     default:
       return "???state";

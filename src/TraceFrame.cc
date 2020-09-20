@@ -25,6 +25,9 @@ void TraceFrame::dump(FILE* out) const {
   if (event().is_syscall_event()) {
     fprintf(out, "(state:%s) ", state_name(event().Syscall().state));
   }
+  if (event().is_sigsegv_patching_event()) {
+    fprintf(out, "(state:%s) ", sigsegv_patching_state_name(event().Sigsegv().state));
+  }
   fprintf(out, "tid:%d, ticks:%" PRId64 "\n", tid(), ticks());
   if (!event().record_regs()) {
     return;
