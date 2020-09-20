@@ -168,6 +168,8 @@ static bool try_handle_prot_none(RecordTask* t, siginfo_t* si)
       << m.map.start() << "-" << m.map.end() << ", size=" << m.map.size();
   }
 
+  t->record_remote(m.map.start(), m.map.size());
+
   auto ev = Event::sigsegv_patching(SIGSEGV_PATCHING_ENTERING, addr.as_int());
 
   t->record_event(ev, RecordTask::FLUSH_SYSCALLBUF);

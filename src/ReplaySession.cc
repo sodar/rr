@@ -1433,7 +1433,7 @@ Completion ReplaySession::sigsegv_patching_enter(ReplayTask* t,
 {
   if (t->regs().matches(trace_frame.regs()) && t->tick_count() == trace_frame.ticks()) {
     ASSERT(t, trace_frame.event().Sigsegv().state == SIGSEGV_PATCHING_ENTERING);
-    // TODO(sodar): Revert memory from trace.
+    t->apply_all_data_records_from_trace();
     return COMPLETE;
   }
 
