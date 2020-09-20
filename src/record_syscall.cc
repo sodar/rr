@@ -5512,6 +5512,8 @@ static void process_mmap(RecordTask* t, size_t length, int prot, int flags,
 
     if (is_file_hugepage_backed(tracee_file_name)) {
       LOG(debug) << tracee_file_name << " is hugepage backed.";
+
+      MonitoredSharedMemory::monitor_hugepage_backed(t, tracee_file_name, t->vm()->mapping_of(addr));
     }
   }
 

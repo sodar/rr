@@ -45,6 +45,30 @@ void MonitoredSharedMemory::maybe_monitor(RecordTask* t,
   memcpy(shared.local_addr, real_mem, shared.map.size());
 }
 
+void MonitoredSharedMemory::monitor_hugepage_backed(RecordTask* t,
+                                                    const std::string& tracee_file_name,
+                                                    const AddressSpace::Mapping& m)
+{
+  if (!is_file_hugepage_backed(tracee_file_name)) {
+    return;
+  }
+
+  {
+    LOG(debug)
+      << "preparing to change protection of hugepage backed memory at "
+      << m.map.start() << "-" << m.map.end() << ", size=" << m.map.size();
+
+    AutoRemoteSyscalls remote(t, AutoRemoteSyscalls::DISABLE_MEMORY_PARAMS);
+    int syscallno = syscall_number_for_mprotect(t->arch());
+    remote.infallible_syscall(syscallno, m.map.start(), m.map.size(), PROT_NONE);
+
+    LOG(debug)
+      << "protection changed for hugepage backed memory at "
+      << m.map.start() << "-" << m.map.end() << ", size=" << m.map.size()
+      << " to PROT_NONE";
+  }
+}
+
 MonitoredSharedMemory::shr_ptr MonitoredSharedMemory::subrange(uintptr_t,
                                                                uintptr_t) {
   DEBUG_ASSERT(false && "Subranges not supported yet!");

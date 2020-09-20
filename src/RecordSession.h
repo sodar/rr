@@ -193,6 +193,9 @@ public:
    */
   void kill_all_record_tasks();
 
+  /** TODO(sodar): Document */
+  bool handle_sigsegv_patching_event(RecordTask* t, StepState* step_state);
+
 private:
   RecordSession(const std::string& exe_path,
                 const std::vector<std::string>& argv,

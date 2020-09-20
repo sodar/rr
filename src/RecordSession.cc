@@ -785,6 +785,9 @@ void RecordSession::task_continue(const StepState& step_state) {
 
     bool singlestep = is_ptrace_any_singlestep(t->arch(),
       t->emulated_ptrace_cont_command);
+    if (!singlestep && t->ev().is_sigsegv_patching_event()) {
+      singlestep = true;
+    }
     if (singlestep && is_at_syscall_instruction(t, t->ip())) {
       // We're about to singlestep into a syscall instruction.
       // Act like we're NOT singlestepping since doing a PTRACE_SINGLESTEP would
@@ -1775,6 +1778,39 @@ bool RecordSession::handle_signal_event(RecordTask* t, StepState* step_state) {
   return true;
 }
 
+bool RecordSession::handle_sigsegv_patching_event(RecordTask* t, StepState* step_state)
+{
+  // TODO(sodar): Fix unused variable.
+  ((void)step_state);
+
+  if (t->ev().is_sigsegv_patching_event()) {
+    auto sp = t->ev().Sigsegv();
+    t->pop_event(EV_SIGSEGV_PATCHING);
+
+    {
+      auto& m = t->vm()->mapping_of(sp.addr);
+
+      LOG(debug)
+        << "preparing to reenable protection of hugepage backed memory at "
+        << m.map.start() << "-" << m.map.end() << ", size=" << m.map.size();
+
+      AutoRemoteSyscalls remote(t, AutoRemoteSyscalls::DISABLE_MEMORY_PARAMS);
+      int syscallno = syscall_number_for_mprotect(t->arch());
+      remote.infallible_syscall(syscallno, m.map.start(), m.map.size(), PROT_NONE);
+
+      LOG(debug)
+        << "reenabled protection of hugepage backed memory at "
+        << m.map.start() << "-" << m.map.end() << ", size=" << m.map.size();
+    }
+
+    t->push_event(Event::noop());
+
+    return true;
+  }
+
+  return false;
+}
+
 template <typename Arch>
 static bool is_ptrace_any_sysemu_arch(int command) {
   return command >= 0 &&
@@ -2346,8 +2382,11 @@ RecordSession::RecordResult RecordSession::record_step() {
     if (did_enter_syscall && t->ev().type() == EV_SYSCALL) {
       syscall_state_changed(t, &step_state);
     }
+  } else if (rescheduled.by_waitpid && handle_sigsegv_patching_event(t, &step_state)) {
+    goto sigsegv_patching_handled;
   } else if (rescheduled.by_waitpid && handle_signal_event(t, &step_state)) {
   } else {
+sigsegv_patching_handled:
     runnable_state_changed(t, &step_state, &result, rescheduled.by_waitpid);
 
     if (result.status != STEP_CONTINUE ||

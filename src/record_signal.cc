@@ -137,6 +137,42 @@ static bool try_handle_trapped_instruction(RecordTask* t, siginfo_t* si) {
 }
 
 /**
+ * TODO(sodar): Document
+ */
+static bool try_handle_prot_none(RecordTask* t, siginfo_t* si)
+{
+  ASSERT(t, si->si_signo == SIGSEGV);
+
+  auto arch_si = reinterpret_cast<NativeArch::siginfo_t*>(si);
+  auto addr = arch_si->_sifields._sigfault.si_addr_.rptr();
+
+  const auto& m = t->vm()->mapping_of(addr);
+  if (!is_file_hugepage_backed(m.map.fsname())) {
+    return false;
+  }
+
+  {
+    LOG(debug)
+      << "preparing to allow READ/WRITE on hugepage backed memory at "
+      << m.map.start() << "-" << m.map.end() << ", size=" << m.map.size();
+
+    AutoRemoteSyscalls remote(t, AutoRemoteSyscalls::DISABLE_MEMORY_PARAMS);
+    int syscallno = syscall_number_for_mprotect(t->arch());
+    int prot_flags = PROT_READ | PROT_WRITE;
+    remote.infallible_syscall(syscallno, m.map.start(), m.map.size(), prot_flags);
+
+    LOG(debug)
+      << "allowe READ/WRITE on hugepage backed memory at "
+      << m.map.start() << "-" << m.map.end() << ", size=" << m.map.size();
+  }
+
+  t->push_event(Event::sigsegv_patching(addr.as_int()));
+  t->push_event(Event::noop());
+
+  return true;
+}
+
+/**
  * Return true if |t| was stopped because of a SIGSEGV and we want to retry
  * the instruction after emulating MAP_GROWSDOWN.
  */
@@ -148,8 +184,13 @@ static bool try_grow_map(RecordTask* t, siginfo_t* si) {
   auto addr = arch_si->_sifields._sigfault.si_addr_.rptr();
 
   if (t->vm()->has_mapping(addr)) {
-    LOG(debug) << "try_grow_map " << addr << ": address already mapped";
-    return false;
+    if (try_handle_prot_none(t, si)) {
+      LOG(debug) << "try_handle_prot_none " << addr << ": done";
+      return true;
+    } else {
+      LOG(debug) << "try_grow_map " << addr << ": address already mapped";
+      return false;
+    }
   }
   auto maps = t->vm()->maps_starting_at(floor_page_size(addr));
   auto it = maps.begin();

@@ -36,6 +36,9 @@ Event::Event(const Event& o) : event_type(o.event_type) {
     case EV_SYSCALLBUF_FLUSH:
       new (&SyscallbufFlush()) SyscallbufFlushEvent(o.SyscallbufFlush());
       return;
+    case EV_SIGSEGV_PATCHING:
+      new (&Sigsegv()) SigsegvPatchingEvent(o.Sigsegv());
+      return;
     default:
       return;
   }
@@ -61,6 +64,9 @@ Event::~Event() {
     case EV_SYSCALLBUF_FLUSH:
       SyscallbufFlush().~SyscallbufFlushEvent();
       return;
+    case EV_SIGSEGV_PATCHING:
+      Sigsegv().~SigsegvPatchingEvent();
+      return;
     default:
       return;
   }
@@ -85,6 +91,8 @@ bool Event::record_regs() const {
     case EV_SIGNAL_DELIVERY:
     case EV_SIGNAL_HANDLER:
       return true;
+    case EV_SIGSEGV_PATCHING:
+      return true;
     default:
       return false;
   }
@@ -102,6 +110,8 @@ bool Event::record_extra_regs() const {
     case EV_SIGNAL_HANDLER:
       // entering a signal handler seems to clear FP/SSE regs,
       // so record these effects.
+      return true;
+    case EV_SIGSEGV_PATCHING:
       return true;
     default:
       return false;
@@ -140,6 +150,10 @@ bool Event::is_syscall_event() const {
     default:
       return false;
   }
+}
+
+bool Event::is_sigsegv_patching_event() const {
+  return event_type == EV_SIGSEGV_PATCHING;
 }
 
 void Event::log() const { LOG(info) << *this; }
@@ -211,6 +225,7 @@ std::string Event::type_name() const {
       CASE(SYSCALL);
       CASE(SYSCALL_INTERRUPTION);
       CASE(TRACE_TERMINATION);
+      CASE(SIGSEGV_PATCHING);
 #undef CASE
     default:
       FATAL() << "Unknown event type " << event_type;

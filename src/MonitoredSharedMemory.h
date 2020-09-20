@@ -38,6 +38,10 @@ public:
                             const AddressSpace::Mapping& m, int tracee_fd,
                             uint64_t offset);
 
+  static void monitor_hugepage_backed(RecordTask* t,
+                                      const std::string& tracee_file_name,
+                                      const AddressSpace::Mapping& m);
+
   static void check_all(RecordTask* t);
 
   shr_ptr subrange(uintptr_t start, uintptr_t size);
