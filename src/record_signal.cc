@@ -168,6 +168,15 @@ static bool try_handle_prot_none(RecordTask* t, siginfo_t* si)
       << m.map.start() << "-" << m.map.end() << ", size=" << m.map.size();
   }
 
+  auto r = MemoryRange(addr, 8);
+  ssize_t size;
+  if (m.map.contains(r)) {
+    size = r.size();
+  } else {
+    size = r.size() - (r.end().as_int() - m.map.end().as_int());
+  }
+  t->record_remote(addr, size);
+
   auto ev = Event::sigsegv_patching(SIGSEGV_PATCHING_ENTERING, addr.as_int());
 
   t->record_event(ev, RecordTask::FLUSH_SYSCALLBUF);
