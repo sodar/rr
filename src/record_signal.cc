@@ -153,6 +153,7 @@ static bool try_handle_prot_none(RecordTask* t, siginfo_t* si)
 
   {
     LOG(debug)
+      << __func__ << "(): "
       << "preparing to allow READ/WRITE on hugepage backed memory at "
       << m.map.start() << "-" << m.map.end() << ", size=" << m.map.size();
 
@@ -162,7 +163,8 @@ static bool try_handle_prot_none(RecordTask* t, siginfo_t* si)
     remote.infallible_syscall(syscallno, m.map.start(), m.map.size(), prot_flags);
 
     LOG(debug)
-      << "allowe READ/WRITE on hugepage backed memory at "
+      << __func__ << "(): "
+      << "allowed READ/WRITE on hugepage backed memory at "
       << m.map.start() << "-" << m.map.end() << ", size=" << m.map.size();
   }
 

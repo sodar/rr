@@ -1791,6 +1791,7 @@ bool RecordSession::handle_sigsegv_patching_event(RecordTask* t, StepState* step
       auto& m = t->vm()->mapping_of(sp.addr);
 
       LOG(debug)
+        << __func__ << "(): "
         << "preparing to reenable protection of hugepage backed memory at "
         << m.map.start() << "-" << m.map.end() << ", size=" << m.map.size();
 
@@ -1799,6 +1800,7 @@ bool RecordSession::handle_sigsegv_patching_event(RecordTask* t, StepState* step
       remote.infallible_syscall(syscallno, m.map.start(), m.map.size(), PROT_NONE);
 
       LOG(debug)
+        << __func__ << "(): "
         << "reenabled protection of hugepage backed memory at "
         << m.map.start() << "-" << m.map.end() << ", size=" << m.map.size();
     }
