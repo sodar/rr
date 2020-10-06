@@ -1771,7 +1771,7 @@ static Switchable prepare_ioctl(RecordTask* t,
       syscall_state.reg_parameter<typename Arch::signed_int>(3);
       return PREVENT_SWITCH;
 
-    case SG_IO:
+    case SG_IO: {
       auto argsp = syscall_state.reg_parameter<typename Arch::sg_io_hdr>(3, IN_OUT);
       auto args = t->read_mem(argsp);
       syscall_state.mem_ptr_parameter(REMOTE_PTR_FIELD(argsp, dxferp), args.dxfer_len);
@@ -1779,6 +1779,7 @@ static Switchable prepare_ioctl(RecordTask* t,
       syscall_state.mem_ptr_parameter(REMOTE_PTR_FIELD(argsp, sbp), args.mx_sb_len);
       //usr_ptr: This value is not acted upon by the sg driver.
       return PREVENT_SWITCH;
+    }
   }
 
   /* In ioctl language, "_IOC_READ" means "outparam".  Both
