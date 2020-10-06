@@ -36,6 +36,8 @@
 #include <linux/vt.h>
 #include <linux/wireless.h>
 #include <poll.h>
+#include <rdma/ib_user_ioctl_cmds.h>
+#include <rdma/rdma_user_ioctl_cmds.h>
 #include <sched.h>
 #include <scsi/sg.h>
 #include <sound/asound.h>
@@ -1602,6 +1604,73 @@ template <typename Arch> void prepare_ethtool_ioctl(RecordTask* t, TaskSyscallSt
 }
 
 template <typename Arch>
+static void prepare_rdma_verbs_ioctl(RecordTask* t,
+                                     TaskSyscallState& syscall_state)
+{
+  remote_ptr<void> arg_p = syscall_state.syscall_entry_registers.arg(3);
+  auto ib_uverbs_hdr_p = arg_p.cast<typename Arch::ib_uverbs_ioctl_hdr>();
+  if (ib_uverbs_hdr_p.is_null()) {
+    // TODO(sodar): Logging.
+    LOG(warn) << "ib_uverbs_hdr_p is NULL";
+    syscall_state.expect_errno = EINVAL;
+    return;
+  }
+
+  bool ok = true;
+  auto ib_uverbs_hdr = t->read_mem(ib_uverbs_hdr_p, &ok);
+  if (!ok) {
+    // TODO(sodar): Logging.
+    LOG(fatal) << "failed to read ib_uverbs_ioctl_hdr contents";
+    syscall_state.expect_errno = EFAULT;
+    return;
+  }
+
+  {
+    auto size = ib_uverbs_hdr.length;
+    auto p = syscall_state.reg_parameter(3, size, IN_OUT);
+    if (p.is_null()) {
+      // TODO(sodar): Logging.
+      syscall_state.expect_errno = EINVAL;
+      return;
+    }
+  }
+
+  auto attr_p = REMOTE_PTR_FIELD(ib_uverbs_hdr_p, attrs[0]);
+  for (unsigned int i = 0; i < ib_uverbs_hdr.num_attrs; ++i, ++attr_p) {
+    auto attr = t->read_mem(attr_p, &ok);
+    ASSERT(t, ok) << "failed to read attrs[" << i << "]";
+
+    if (ib_uverbs_hdr.object_id == UVERBS_OBJECT_DEVICE
+        && ib_uverbs_hdr.method_id == UVERBS_METHOD_INVOKE_WRITE) {
+      switch (attr.attr_id) {
+        case UVERBS_ATTR_CORE_IN:
+        case UVERBS_ATTR_UHW_IN: {
+          if (attr.len > sizeof(uint64_t)) {
+            auto data_p = REMOTE_PTR_FIELD(attr_p, data);
+            syscall_state.mem_ptr_parameter(data_p, attr.len, IN_OUT);
+          }
+          break;
+        }
+        case UVERBS_ATTR_CORE_OUT:
+        case UVERBS_ATTR_UHW_OUT: {
+          auto data_p = REMOTE_PTR_FIELD(attr_p, data);
+          syscall_state.mem_ptr_parameter(data_p, attr.len, IN_OUT);
+          break;
+        }
+        case UVERBS_ATTR_WRITE_CMD: {
+          // Should be inside attr struct.
+          break;
+        }
+        default:
+          ASSERT(t, false) << "unknown attr_id for INVOKE_WRITE verb";
+      }
+    }
+  }
+
+  return;
+}
+
+template <typename Arch>
 static Switchable prepare_ioctl(RecordTask* t,
                                 TaskSyscallState& syscall_state) {
   int fd = t->regs().arg1();
@@ -1797,6 +1866,10 @@ static Switchable prepare_ioctl(RecordTask* t,
 
     case FBIOGET_VSCREENINFO:
       syscall_state.reg_parameter<typename Arch::fb_var_screeninfo>(3);
+      return PREVENT_SWITCH;
+
+    case RDMA_VERBS_IOCTL:
+      prepare_rdma_verbs_ioctl<Arch>(t, syscall_state);
       return PREVENT_SWITCH;
   }
 
